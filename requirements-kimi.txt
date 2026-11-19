@@ -1,0 +1,12 @@
+# Environment of the Kimi-VL model runs (Python 3.10, transformers 4.50.3).
+torch==2.6.0            # the paper used the CUDA 12.4 build
+transformers==4.50.3
+numpy==2.2.6
+pyarrow==25.0.1
+pillow==12.3.0
+# Not imported by the code. The tokenizer code that ships with the Kimi-VL weights needs tiktoken. The other three
+# packages were installed in the environment of the paper.
+tiktoken==0.14.0
+blobfile==3.3.0
+accelerate==1.15.0
+torchvision==0.21.0
