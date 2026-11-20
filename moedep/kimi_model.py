@@ -19,7 +19,7 @@ def _patched_gate_forward(self, hidden_states):
     if m is not None and getattr(self, "_abl_scope_kind", None) is not None:   # token-scoped: (N, E) mask
         N = x.shape[0]; rows = getattr(self, "_abl_rows", None)
         if rows is None or rows.numel() != N:
-            rows = torch.full((N,), self._abl_scope_kind == "text", dtype=torch.bool, device=x.device)
+            rows = torch.full((N,), self._abl_scope_kind in ("text", "textonly"), dtype=torch.bool, device=x.device)
         m = rows.to(x.device)[:, None] & m[None, :]
     if self.topk_method == "noaux_tc":
         choice = scores + self.e_score_correction_bias.unsqueeze(0) * getattr(self, "_bias_scale", 1.0)

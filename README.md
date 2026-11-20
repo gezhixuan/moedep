@@ -36,6 +36,7 @@ The repository holds no result files, no model weights, no datasets and no figur
 | `moedep/token_breakdown.py` | text load on the vision-exclusive experts by token type (supporting analysis of the format control) |
 | `moedep/lora_experts.py`, `moedep/train_deprive.py`, `moedep/train_restore.py`, `moedep/summarize_deprive.py` | deprivation and re-exposure training |
 | `moedep/tables.py` | prints the tables (CPU) |
+| `moedep/intervals.py` | prints the paired bootstrap intervals of a lesion run (CPU) |
 | `scripts/paper_runs.sh` | every command of the paper, in order |
 
 ## Hardware
@@ -131,7 +132,7 @@ The COCO captions are needed for the caption NLL. The COCO images are needed onl
      --sets mm,ascii,shapes --n_mm 120 --n_concepts 300 --n_var 6
    ```
 
-3. Scoped lesions. A third field restricts the lesion to image-token positions or to text positions. Generated tokens count as text.
+3. Scoped lesions. A third field restricts the lesion to image-token positions or to text positions. The text scope is every position that is not an image token: the chat template, the question, the vision delimiters (two tokens per image in Qwen3-VL and Gemma-4, three in Kimi-VL) and the generated tokens. Two further scopes split it, `textonly` (text without the delimiters) and `delim` (the delimiters alone). In the three models of the paper a lesion at the delimiters alone changes the five-probe mean by less than 2 points, and the text scope without the delimiters reproduces the cost of the text scope (block 11 of `scripts/paper_runs.sh`).
 
    ```bash
    python -m moedep.run_ablation --model models/Qwen3-VL-30B-A3B-Instruct --out_dir $RUN/ablation_scope \
@@ -140,13 +141,13 @@ The COCO captions are needed for the caption NLL. The COCO images are needed onl
      --sets mm,hard,arc --n_mm 120
    ```
 
-4. Generation metrics. `run_generation` takes the same `--mask` and `--cond` arguments and writes the teacher-forced NLL of the five COCO reference captions of each POPE image and the VQA soft accuracy of a greedy TextVQA answer.
+4. Generation metrics. `run_generation` takes the same `--mask` and `--cond` arguments and writes the teacher-forced NLL of the five COCO reference captions of each POPE image and the VQA soft accuracy of a greedy TextVQA answer. The soft accuracy is min(matches / 3, 1) over the ten human answers, after lower-casing and removal of punctuation and articles. The official VQA evaluation also normalizes number words and contractions and averages over leave-one-out subsets of the answers. Rescored that way, the accuracies of the paper are 0.2 to 1.6 points lower and no change against the intact model moves by more than 0.7 points.
 
-5. Deprivation and re-exposure training (Qwen3-VL). `train_deprive` trains on UltraChat text with LoRA on every routed expert and trainable routers, under one of the conditions `aux_off`, `aux_on`, `freeze_V10`, `block_V10`, `bias_balance`. `train_restore` continues from a saved state on COCO captions. With `--steps 0` it only evaluates a state. `summarize_deprive` prints the metrics of every evaluation step.
+5. Deprivation and re-exposure training (Qwen3-VL). `train_deprive` trains on UltraChat text with LoRA on every routed expert and trainable routers, under one of the conditions `aux_off`, `aux_on`, `freeze_V10`, `block_V10`, `bias_balance`. `train_restore` continues from a saved state on COCO captions and leaves out the COCO images of the POPE items, the only tracked probe that is built on COCO. With `--steps 0` it only evaluates a state. `summarize_deprive` prints the metrics of every evaluation step.
 
 6. Kimi-VL bias removal. `--bias_scale 0` in `run_routing` and `run_ablation` scales the native balancing bias of Kimi-VL to zero. The routing pass without the bias gives its own vision-exclusive set, which the lesion runs name `V10nb`.
 
-7. Gemma-4. The same routing pass, expert sets, lesions, scoped lesions and generation metrics, with the Gemma-4 model folder.
+7. Gemma-4. The same routing pass, expert sets, lesions, scoped lesions and generation metrics, with the Gemma-4 model folder. The routing map of Gemma-4 in the paper covers 606 multimodal items, six more than the other two models (block 9 of `scripts/paper_runs.sh`).
 
 Lesion and generation runs are resumable. They append to `results.jsonl` in the output folder and skip the pairs of item and condition that are already present, so several commands can share one folder. Each run also writes `summary.md` with the accuracy per condition.
 
@@ -170,7 +171,7 @@ Block numbers refer to `scripts/paper_runs.sh`. Run folders are relative to `MOE
 | Table S5 | 3 | `qwen3vl/ablation_scope`, `generation_scope`, `generation_scope2`, printed by `moedep.tables` |
 | Table S6 | 7, 8, 9 | `ablation_scope`, `ablation_scope2`, `ablation_scope_bias0` of Kimi-VL and Gemma-4, printed by `moedep.tables` |
 
-## Printing the tables
+## Printing the tables and the intervals
 
 ```bash
 python -m moedep.tables            # reads MOEDEP_RUNS
@@ -178,6 +179,12 @@ python -m moedep.tables /path/to/runs
 ```
 
 This prints Table 1, Table 2, Tables S3 to S6 and the five-probe means (POPE, MMVP, V*, ZoomBench, TextVQA) from the `results.jsonl` files and, for Table 2, from the routing counts. A cell prints as `n/a` when its run is missing. Each row label ends with the condition name used in the result files.
+
+The paired 95% bootstrap intervals of a lesion run (Fig. 3, Fig. S1 and the intervals quoted in the text) are printed by
+
+```bash
+python -m moedep.intervals $MOEDEP_RUNS/qwen3vl/ablation_scope
+```
 
 ## Internal names
 
@@ -209,6 +216,7 @@ Condition names in `results.jsonl` are built from these names.
 | `NAME_zero` | set removed by zeroing at all positions |
 | `NAME_reroute_image`, `NAME_zero_image` | scoped lesion at image-token positions |
 | `NAME_reroute_text`, `NAME_zero_text` | scoped lesion at text positions |
+| `NAME_reroute_textonly`, `NAME_reroute_delim` (also with `zero`) | the text scope without the vision delimiters, and the delimiters alone |
 | `random_NAME_SEED` | random set with the size of NAME in every layer, re-routed |
 
 The probes are named `pope`, `mmvp`, `vstar`, `zoombench`, `textvqa`, `hr_bench_4k`, `hr_bench_8k`, `mmerw_lite` and `arc_easy`. The training conditions `aux_off`, `aux_on` (coefficient 0.01 or 0.1), `freeze_V10`, `block_V10` and `bias_balance` (update rate 0.001 or 0.02) are the rows aux off, aux 0.01, aux 0.1, freeze, block, bias 0.001 and bias 0.02 of Table S2.

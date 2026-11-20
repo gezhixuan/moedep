@@ -29,7 +29,7 @@ def _patched_router_forward(self, hidden_states):
         if kind is not None:                                   # token-scoped: only image (or only text) positions
             N = router_logits.shape[0]; rows = getattr(self, "_abl_rows", None)
             if rows is None or rows.numel() != N:              # e.g. decode steps during generate(): new tokens are text
-                rows = torch.full((N,), kind == "text", dtype=torch.bool, device=router_logits.device)
+                rows = torch.full((N,), kind in ("text", "textonly"), dtype=torch.bool, device=router_logits.device)
             full = rows.to(router_logits.device)[:, None] & m[None, :]   # (N, E)
         if self._abl_mode == "reroute":
             sel = router_logits.masked_fill(full, float("-inf"))
@@ -101,6 +101,11 @@ class MoeVLM:
         rows = ids == self.image_token_id
         if kind == "text":
             rows = ~rows
+        elif kind in ("textonly", "delim"):                    # controls: 'text' without the vision delimiters, and the delimiters alone
+            vs = torch.zeros_like(rows)
+            for s in self.vspecial:
+                vs |= ids == s
+            rows = vs if kind == "delim" else ~rows & ~vs
         for r in self.routers:
             r._abl_rows = rows
 
@@ -189,7 +194,8 @@ class MoeVLM:
     def set_ablation(self, masks=None, mode="reroute", scope=None):
         """masks: None or bool array (L, E); True = expert removed in that MoE layer.
         scope: None (all tokens), 'image' (mask applies only at image-token positions) or 'text' (only at non-image positions,
-        including generated tokens)."""
+        including the vision delimiters and the generated tokens). Two controls split the text scope: 'textonly' (text
+        without the vision delimiters) and 'delim' (the vision delimiters alone)."""
         self._scope_kind = scope if masks is not None else None
         for li, r in enumerate(self.routers):
             if masks is None or not np.any(masks[li]):

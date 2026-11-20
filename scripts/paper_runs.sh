@@ -162,8 +162,8 @@ G="$RUNS/gemma4"; GA="$G/analysis"
   --sets mm,hard,arc --n_mm 120
 
 # ---- 9. Gemma-4: the complete pipeline (Fig. 2, Fig. 3B, Fig. S1, Table 2, Table S4, Table S6)
-# In the paper's run this short pass came first. Its ten items stay in the index, so the routing map of Gemma-4 holds
-# 2,773 items.
+# In the paper's run this short pass came first. Six of its ten items are not among the 600 of the full pass and stay in
+# the index, so the routing map of Gemma-4 holds 2,773 items, 606 of them multimodal.
 "$PY" -m moedep.run_routing --model "$GEMMA" --out_dir "$G" --sets mm --n_mm 2 --limit 3
 "$PY" -m moedep.run_routing --model "$GEMMA" --out_dir "$G" --sets mm,text,ascii,shapes --n_mm 120 --n_alpaca 400 --n_qonly 300 --n_concepts 300 --n_var 6
 "$PY" -m moedep.analyze_routing --run_dir "$G"                      # CPU
@@ -189,3 +189,14 @@ G="$RUNS/gemma4"; GA="$G/analysis"
 
 # ---- 10. Tables (CPU)
 "$PY" -m moedep.tables "$RUNS"
+
+# ---- 11. Control for the text scope (run after the paper, feeds none of its tables or figures)
+# The text scope holds the vision delimiters. These runs split it into text without the delimiters and the delimiters alone.
+for spec in "$PY|$QWEN|$Q|$A" "$PY_KIMI|$KIMI|$K|$KA" "$PY|$GEMMA|$G|$GA"; do
+  IFS="|" read -r py model run an <<< "$spec"
+  "$py" -m moedep.run_ablation --model "$model" --out_dir "$run/ablation_delim" \
+    --mask "TOPIMG16_noV10=$an/substrate_topimg16_noV10.json" --mask "ALL=$an/substrate_all.json" \
+    --cond none --cond TOPIMG16_noV10:reroute:textonly --cond TOPIMG16_noV10:reroute:delim --cond ALL:zero:textonly --cond ALL:zero:delim \
+    --sets mm,hard --n_mm 120
+  "$PY" -m moedep.intervals "$run/ablation_delim"                   # CPU
+done

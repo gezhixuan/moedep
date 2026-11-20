@@ -23,7 +23,7 @@ def _patched_gemma_router_forward(self, hidden_states):
     if m is not None and getattr(self, "_abl_scope_kind", None) is not None:   # token-scoped: (N, E) mask
         N = logits.shape[0]; rows = getattr(self, "_abl_rows", None)
         if rows is None or rows.numel() != N:
-            rows = torch.full((N,), self._abl_scope_kind == "text", dtype=torch.bool, device=logits.device)
+            rows = torch.full((N,), self._abl_scope_kind in ("text", "textonly"), dtype=torch.bool, device=logits.device)
         m = rows.to(logits.device)[:, None] & m[None, :]
     if m is not None and self._abl_mode == "reroute":
         sel = logits.masked_fill(m, float("-inf"))
